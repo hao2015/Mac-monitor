@@ -56,13 +56,7 @@ class MenuBarApp: NSObject {
         }
         menu.addItem(cpuItem)
         
-        // Disk Usage Item
-        let diskItem = NSMenuItem(title: "Disk Usage: --%", action: nil, keyEquivalent: "")
-        diskItem.tag = 3
-        if #available(macOS 11.0, *) {
-            diskItem.image = NSImage(systemSymbolName: "internaldrive", accessibilityDescription: "Disk")
-        }
-        menu.addItem(diskItem)
+
         
         // Disk Temperature Item
         let diskTempItem = NSMenuItem(title: "Disk Temp: --°C", action: nil, keyEquivalent: "")
@@ -93,7 +87,7 @@ class MenuBarApp: NSObject {
         let temp = tempReader.readCPUTemperature()
         let diskTemp = tempReader.readDiskTemperature()
         let cpuUsage = cpuReader.getCPUUsage()
-        let diskInfo = diskReader.getDiskUsage()
+        let volumes = diskReader.getMountedVolumes()
         
         // Update menu bar title
         if let button = statusItem.button {
@@ -118,13 +112,29 @@ class MenuBarApp: NSObject {
             cpuItem.title = String(format: "CPU Usage: %.1f%%", cpuUsage)
         }
         
-        // Update detailed Disk usage menu item
-        if let diskItem = menu.item(withTag: 3) {
-            if let disk = diskInfo {
-                diskItem.title = String(format: "Disk Used: %.1f%% (Free: %.1f GB / %.1f GB)", disk.usedPercent, disk.freeGB, disk.totalGB)
-            } else {
-                diskItem.title = "Disk Usage: N/A"
+        // Update detailed Disk usage menu items dynamically (tag 200)
+        while let existingItem = menu.item(withTag: 200) {
+            menu.removeItem(existingItem)
+        }
+        
+        let cpuUsageIndex = menu.indexOfItem(withTag: 2)
+        var insertIndex = cpuUsageIndex + 1
+        
+        for volume in volumes {
+            let itemTitle = String(format: "%@ (%@): %.1f%% (Free: %.1f GB / %.1f GB)",
+                                   volume.name,
+                                   volume.path == "/" ? "/" : volume.path,
+                                   volume.usedPercent,
+                                   volume.freeGB,
+                                   volume.totalGB)
+            let diskMenuItem = NSMenuItem(title: itemTitle, action: nil, keyEquivalent: "")
+            diskMenuItem.tag = 200
+            if #available(macOS 11.0, *) {
+                let symbolName = volume.isInternal ? "internaldrive" : "externaldrive"
+                diskMenuItem.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Disk Capacity")
             }
+            menu.insertItem(diskMenuItem, at: insertIndex)
+            insertIndex += 1
         }
         
         // Update detailed Disk temp menu item
