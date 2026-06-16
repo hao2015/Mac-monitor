@@ -38,9 +38,40 @@ class ExternalDiskReader {
         return String(data: data, encoding: .utf8)
     }
     
-    // Find all external physical disks
+    // Determine the physical boot disk (typically disk0)
+    private func getBootDiskName() -> String? {
+        guard let infoOutput = runCommand(path: "/usr/sbin/diskutil", arguments: ["info", "-plist", "/"]),
+              let infoData = infoOutput.data(using: .utf8) else {
+            return nil
+        }
+        
+        guard let plist = try? PropertyListSerialization.propertyList(from: infoData, options: [], format: nil) as? [String: Any] else {
+            return nil
+        }
+        
+        // 1. Try APFSPhysicalStores
+        if let physicalStores = plist["APFSPhysicalStores"] as? [[String: Any]],
+           let firstStore = physicalStores.first,
+           let storeName = firstStore["APFSPhysicalStore"] as? String {
+            // Strip partition suffix (e.g. disk0s2 -> disk0)
+            if let idx = storeName.firstIndex(of: "s") {
+                return String(storeName[..<idx])
+            }
+            return storeName
+        }
+        
+        // 2. Fallback to ParentWholeDisk
+        if let parentWhole = plist["ParentWholeDisk"] as? String {
+            return parentWhole
+        }
+        
+        return nil
+    }
+    
+    // Find all other physical disks (both external and secondary internal)
     func getExternalDisks() -> [ExternalDiskInfo] {
         var disks: [ExternalDiskInfo] = []
+        let bootDisk = getBootDiskName()
         
         // 1. Get all disks via diskutil list -plist
         guard let listOutput = runCommand(path: "/usr/sbin/diskutil", arguments: ["list", "-plist"]),
@@ -57,6 +88,11 @@ class ExternalDiskReader {
         let wholeDisks = allDisks.filter { !$0.contains("s") }
         
         for disk in wholeDisks {
+            // Exclude the physical boot disk, as its temperature is already monitored
+            if let bootDisk = bootDisk, disk == bootDisk {
+                continue
+            }
+            
             // Query details for each disk
             guard let infoOutput = runCommand(path: "/usr/sbin/diskutil", arguments: ["info", "-plist", disk]),
                   let infoData = infoOutput.data(using: .utf8) else {
@@ -67,12 +103,10 @@ class ExternalDiskReader {
                 continue
             }
             
-            // We want physical external disks
-            let isInternal = infoPlist["Internal"] as? Bool ?? true
+            // Filter out virtual disks (RAM disks, DMGs, etc.), keep all physical drives
             let isVirtual = infoPlist["VirtualOrPhysical"] as? String == "Virtual"
-            
-            if !isInternal && !isVirtual {
-                let model = infoPlist["MediaName"] as? String ?? "External Disk"
+            if !isVirtual {
+                let model = infoPlist["MediaName"] as? String ?? "Disk"
                 let temp = getDiskTemperature(devName: disk)
                 disks.append(ExternalDiskInfo(devName: disk, modelName: model, temperature: temp))
             }
@@ -98,7 +132,7 @@ class ExternalDiskReader {
             return nil
         }
         
-        // 1. Try to read normalized temperature object (supported by smartctl 7.0+)
+        // 1. Try to read normalized temperature object
         if let tempDict = json["temperature"] as? [String: Any],
            let current = tempDict["current"] as? Double {
             return current
@@ -114,7 +148,7 @@ class ExternalDiskReader {
         if let ataTable = json["ata_smart_attributes"] as? [String: Any],
            let table = ataTable["table"] as? [[String: Any]] {
             for attribute in table {
-                if let id = attribute["id"] as? Int, (id == 194 || id == 190) { // Temperature_Celsius or Airflow_Temperature_Cel
+                if let id = attribute["id"] as? Int, (id == 194 || id == 190) {
                     if let rawDict = attribute["raw"] as? [String: Any],
                        let value = rawDict["value"] as? Double {
                         return value
