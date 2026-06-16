@@ -8,6 +8,7 @@ class MenuBarApp: NSObject {
     private let tempReader = TemperatureReader()
     private let cpuReader = CPUReader()
     private let diskReader = DiskReader()
+    private let externalDiskReader = ExternalDiskReader()
     
     override init() {
         super.init()
@@ -133,6 +134,27 @@ class MenuBarApp: NSObject {
             } else {
                 diskTempItem.title = "Disk Temperature: N/A"
             }
+        }
+        
+        // Update external disks dynamically
+        while let existingItem = menu.item(withTag: 100) {
+            menu.removeItem(existingItem)
+        }
+        
+        let externalDisks = externalDiskReader.getExternalDisks()
+        var separatorIndex = menu.numberOfItems - 2
+        if separatorIndex < 0 { separatorIndex = 0 }
+        
+        for disk in externalDisks {
+            let tempStr = disk.temperature != nil ? String(format: "%.1f °C", disk.temperature!) : "N/A"
+            let itemTitle = "\(disk.modelName) (\(disk.devName)): \(tempStr)"
+            let diskMenuItem = NSMenuItem(title: itemTitle, action: nil, keyEquivalent: "")
+            diskMenuItem.tag = 100
+            if #available(macOS 11.0, *) {
+                diskMenuItem.image = NSImage(systemSymbolName: "externaldrive", accessibilityDescription: "External Disk")
+            }
+            menu.insertItem(diskMenuItem, at: separatorIndex)
+            separatorIndex += 1
         }
     }
 }

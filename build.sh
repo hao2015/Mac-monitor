@@ -10,7 +10,7 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 
 echo "=== Compiling Swift files ==="
-swiftc src/TemperatureReader.swift src/CPUReader.swift src/DiskReader.swift src/MenuBarApp.swift src/main.swift \
+swiftc src/TemperatureReader.swift src/CPUReader.swift src/DiskReader.swift src/ExternalDiskReader.swift src/MenuBarApp.swift src/main.swift \
     -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" \
     -target arm64-apple-macos11.0 \
     -O
